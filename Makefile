@@ -1,19 +1,8 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -O2
-
-SRC = client.c
-OBJ = $(SRC:.c=.o)
-EXEC = client
-
-all: $(EXEC)
-
-$(EXEC): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $^
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+client: client.c
+	gcc -o client client.c
 
 clean:
-	rm -f $(OBJ) $(EXEC)
+	rm -f client
 
-.PHONY: all clean
+.PHONY: clean
+

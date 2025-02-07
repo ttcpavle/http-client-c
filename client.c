@@ -45,7 +45,7 @@ int resolve_hostname(const char* hostname, char* ip_address) {
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    hints.ai_family = AF_INET; // podrzava ipv4 i ipv6
+    hints.ai_family = AF_INET;
 
     int s = getaddrinfo(hostname, NULL, &hints, &result);
     if (s != 0) {
