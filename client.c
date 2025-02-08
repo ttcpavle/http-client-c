@@ -12,14 +12,30 @@
 // duzina stringa za ip adresu
 #define IPSTRLEN INET_ADDRSTRLEN
 
+typedef struct url_info{
+    char* url;
+    char* protocol;
+    char* hostname;
+    char* path;
+}url_info;
+
 // extraktovanje hostname i path iz url-a
-void extract_hostname(const char* url, char* hostname, char* path) {
+url_info* extract_hostname(const char* url) {
+    url_info* info = (url_info*)malloc(sizeof(url_info));
+    info->url = (char*)malloc(sizeof(char) * 1024);
+    info->protocol = (char*)malloc(sizeof(char) * 10);
+    info->hostname = (char*)malloc(sizeof(char) * 256);
+    info->path = (char*)malloc(sizeof(char) * 1024);
+
+    strcpy(info->url, url);
     char temp[2048];  
     strcpy(temp, url);
+    strcpy(info->protocol, "http"); // default
 
     if (strncmp(temp, "https://", 8) == 0) {
+        strcpy(info->protocol, "https");
         memmove(temp, temp + 8, strlen(temp) - 7);
-    } else if (strncmp(temp, "http://", 7) == 0) {
+    } else if (strncmp(temp, "http://", 7) == 0) {        
         memmove(temp, temp + 7, strlen(temp) - 6);
     }
 
@@ -27,15 +43,15 @@ void extract_hostname(const char* url, char* hostname, char* path) {
     char* slash = strchr(temp, '/');
     if (slash) {
         *slash = '\0';
-        strcpy(hostname, temp);
+        strcpy(info->hostname, temp);
         *slash = '/';
-        strcpy(path, slash);
+        strcpy(info->path, slash);
     } else {
-        strcpy(hostname, temp);
-        strcpy(path, "/"); // ako nema path
+        strcpy(info->hostname, temp);
+        strcpy(info->path, "/"); // ako nema path
     }
 
-    
+    return info;
 }
 
 // konvertovanje hostname u IP adresu
@@ -75,16 +91,14 @@ int main(int argc, char* argv[]) {
     }
 
     char resolved_ip[IPSTRLEN];
-    char hostname[1024];
-    char path[1024];
 
-    extract_hostname(argv[1], hostname, path);
-    if (resolve_hostname(hostname, resolved_ip) != 0) {
+    url_info* info = extract_hostname(argv[1]);
+    if (resolve_hostname(info->hostname, resolved_ip) != 0) {
         perror("Couldn't resolve hostname\n");
         exit(EXIT_FAILURE);
     }
 
-    printf("Connecting to: %s\nPath:    %s\nHostname: %s\n\n", resolved_ip, path, hostname);
+    printf("Connecting to: %s\nPath:    %s\nHostname: %s\n\n", resolved_ip, info->path, info->hostname);
 
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket == -1) {
@@ -107,7 +121,7 @@ int main(int argc, char* argv[]) {
         "GET %s HTTP/1.1\r\n"
         "Host: %s\r\n"
         "Accept: */*\r\n"
-        "Connection: close\r\n\r\n", path, hostname);
+        "Connection: close\r\n\r\n", info->path, info->hostname);
     char response[8192];
 
     send(client_socket, request, sizeof(request) - 1, 0);
