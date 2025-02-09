@@ -12,28 +12,33 @@
 // duzina stringa za ip adresu
 #define IPSTRLEN INET_ADDRSTRLEN
 
+enum Protocol { HTTP, HTTPS };
+
 typedef struct url_info{
     char* url;
-    char* protocol;
+    enum Protocol protocol;
     char* hostname;
     char* path;
 }url_info;
 
+url_info* parse_url(const char* url);
+int establish_connection(url_info* info);
+void http_get(int client_socket, url_info* info);
+
 // extraktovanje hostname i path iz url-a
-url_info* extract_hostname(const char* url) {
+url_info* parse_url(const char* url) {
     url_info* info = (url_info*)malloc(sizeof(url_info));
     info->url = (char*)malloc(sizeof(char) * 1024);
-    info->protocol = (char*)malloc(sizeof(char) * 10);
+    info->protocol = HTTP;
     info->hostname = (char*)malloc(sizeof(char) * 256);
-    info->path = (char*)malloc(sizeof(char) * 1024);
+    info->path = (char*)malloc(sizeof(char) * 516);
 
     strcpy(info->url, url);
     char temp[2048];  
     strcpy(temp, url);
-    strcpy(info->protocol, "http"); // default
 
     if (strncmp(temp, "https://", 8) == 0) {
-        strcpy(info->protocol, "https");
+        info->protocol = HTTPS;
         memmove(temp, temp + 8, strlen(temp) - 7);
     } else if (strncmp(temp, "http://", 7) == 0) {        
         memmove(temp, temp + 7, strlen(temp) - 6);
@@ -54,35 +59,61 @@ url_info* extract_hostname(const char* url) {
     return info;
 }
 
-// konvertovanje hostname u IP adresu
-int resolve_hostname(const char* hostname, char* ip_address) {
-    struct addrinfo hints, *result, *p; // result pokazuje na lancanu listu, p je za iteraciju
+int establish_connection(url_info* info){
+
+    // result pokazuje na lancanu listu, p je za iteraciju
+    struct addrinfo hints, *result, *p; 
+    int client_socket; // file deskriptor za socket
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
     hints.ai_family = AF_INET;
 
-    int s = getaddrinfo(hostname, NULL, &hints, &result);
+    int s = getaddrinfo(info->hostname, "80", &hints, &result); // todo: promeniti da ne bude nuzno port 80
     if (s != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
     // iteracija kroz listu ip adresa (p pokazuje na trenutni node u listi)
     for (p = result; p != NULL; p = p->ai_next) {
-        // zaustavljanje na prvu ipv4 adresu u listi
-        if (p->ai_family == AF_INET) {
-            struct sockaddr_in* addr = (struct sockaddr_in*)p->ai_addr;
-            // upisati pronadjenu ip adresu u ip_address string
-            inet_ntop(AF_INET, &addr->sin_addr, ip_address, IPSTRLEN);
+
+        client_socket = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (client_socket == -1)
+            continue;
+
+        if (connect(client_socket, p->ai_addr, p->ai_addrlen) != -1)
             break;
-        } 
+
     }
 
-    freeaddrinfo(result); // osloboditi memoriju
-    return 0;
+    if(p == NULL){
+        freeaddrinfo(result); // osloboditi listu
+        close(client_socket); // zatvaranje socketa
+        perror("Could not connect\n");
+        exit(EXIT_FAILURE);
+    }
+
+    freeaddrinfo(result);
+    return client_socket;
 }
+
+void http_get(int client_socket, url_info* info) {
+    char request[1024] = {0};
+    snprintf(request, sizeof(request),
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Accept: */*\r\n"
+        "Connection: close\r\n\r\n", info->path, info->hostname);
+
+    send(client_socket, request, sizeof(request) - 1, 0);
+}
+
+// 1. ocita se url i njegovi delovi
+// 2. kreira se socket (file descriptor) i uspostavi konekcija sa serverom
+// 3. posalje se http GET zahtev sa odgovarajucim podacima
+// 4. primljeni podaci se ocitavaju pomocu funkcije recv() iz socket buffera
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -90,47 +121,18 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    char resolved_ip[IPSTRLEN];
-
-    url_info* info = extract_hostname(argv[1]);
-    if (resolve_hostname(info->hostname, resolved_ip) != 0) {
-        perror("Couldn't resolve hostname\n");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Connecting to: %s\nPath:    %s\nHostname: %s\n\n", resolved_ip, info->path, info->hostname);
-
-    int client_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket == -1) {
-        perror("Socket creation failed\n");
-        exit(EXIT_FAILURE);
-    }
-
-    struct sockaddr_in remote_address;
-    remote_address.sin_family = AF_INET; // ipv4
-    remote_address.sin_port = htons(80); // port soketa
-    inet_pton(AF_INET, resolved_ip, &remote_address.sin_addr); // upisi resolved ip u adresu soketa
+    url_info* info = parse_url(argv[1]);
+    printf("path: %s\nhostname: %s\n", info->path, info->hostname);
+    int client_socket = establish_connection(info);
+    http_get(client_socket, info);
     
-    if (connect(client_socket, (struct sockaddr*)&remote_address, sizeof(remote_address)) == -1) {
-        perror("Connection fail\n");
-        exit(EXIT_FAILURE);
-    }
-
-    char request[4096];
-    snprintf(request, sizeof(request),
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Accept: */*\r\n"
-        "Connection: close\r\n\r\n", info->path, info->hostname);
-    char response[8192];
-
-    send(client_socket, request, sizeof(request) - 1, 0);
-
     // dokle god se fetch-uju bajtovi, nastavlja se printovanje
+    char response[1024];
     ssize_t bytes_received;
     while ((bytes_received = recv(client_socket, response, sizeof(response) - 1, 0)) > 0) {
         response[bytes_received] = '\0';
         printf("%s", response);
+        memset(response, 0, sizeof(response));
     }
     printf("\n");
     close(client_socket);
