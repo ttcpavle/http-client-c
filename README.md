@@ -6,16 +6,12 @@ It works using sockets and openssl for secure connection. Connection defaults to
 
 ## How to run
 
+This program is compatible with Linux based operating systems.
+
 1. install openssl library (used for https connection): 
 ```bash
 sudo apt-get install -y openssl libssl-dev 
 ```
-or 
-```bash
-sudo dnf install -y openssl openssl-devel
-```
-on fedora linux.
-
 2. check `openssl --version`
 3. run `make` to compile project
 4. run the application: 

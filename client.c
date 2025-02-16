@@ -12,9 +12,6 @@
 #include <openssl/bio.h>
 #include <openssl/err.h>
 
-// duzina stringa za ip adresu
-#define IPSTRLEN INET_ADDRSTRLEN
-
 enum Protocol { HTTP, HTTPS };
 
 typedef struct url_info{
@@ -185,7 +182,6 @@ int main(int argc, char* argv[]) {
     }
 
     url_info* info = parse_url(argv[1]);
-    // printf("path: %s\nhostname: %s\n", info->path, info->hostname);
     int client_socket = establish_connection(info);
     http_get(client_socket, info);
 
